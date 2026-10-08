@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.RestartAlt
+import com.example.ui.components.SectionTutorialCard
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ChecklistRtl
@@ -54,6 +56,14 @@ import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.QrCode
+import java.text.NumberFormat
+import java.util.Locale
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -129,9 +139,22 @@ fun ProfileScreen(
     val todayXp = stats?.todayXpGained ?: 0
     val xpProgress = if (targetXp > 0) (currentXp.toFloat() / targetXp.toFloat()).coerceIn(0f, 1f) else 0f
 
+    val topExpenseCategory by viewModel.topExpenseCategory.collectAsState()
+    val financialProfile by viewModel.financialProfile.collectAsState()
+    val scheduleItems by viewModel.scheduleItems.collectAsState()
+
+    var showShowcaseDialog by remember { mutableStateOf(false) }
+
     val profileName = userProfile?.name ?: "Mi Perfil"
     val avatarUrl = userProfile?.avatarUrl ?: KinetixDatabase.AVATAR_URL
     val statusTag = userProfile?.statusTag ?: "Listo para comenzar"
+    val userBio = userProfile?.bio ?: "Organizando mis metas, estudio y finanzas día a día."
+    val customAvatarUri = userProfile?.customAvatarUri
+    val levelNumber = userProfile?.levelNumber ?: stats?.level ?: 7
+    val levelTitle = userProfile?.levelTitle ?: stats?.levelTitle ?: "Nivel 7: Maestro de la Rutina"
+
+    val dismissedTutorials by viewModel.dismissedTutorials.collectAsState()
+    val showTutorial = dismissedTutorials["PERFIL"] != true
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
@@ -141,20 +164,52 @@ fun ProfileScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                SectionTutorialCard(
+                    isVisible = showTutorial,
+                    title = "Tu Perfil & Estadísticas",
+                    subtitle = "Nivel de productividad, racha y personalización",
+                    tips = listOf(
+                        "Monitorea tu XP, nivel de maestría y racha diaria de cumplimiento.",
+                        "Edita tus datos personales, ocupación, bio y foto de perfil.",
+                        "Personaliza el tema y administra los tutoriales de la aplicación."
+                    ),
+                    onDismiss = { viewModel.dismissTutorial("PERFIL") }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(4.dp))
                 // Profile & Hero Level Card
                 ProfileHeroCard(
                     profileName = profileName,
                     avatarUrl = avatarUrl,
                     statusTag = statusTag,
+                    bio = userBio,
+                    customAvatarUri = customAvatarUri,
+                    levelNumber = levelNumber,
+                    levelTitle = levelTitle,
                     currentStreak = currentStreak,
                     thumbsUpCelebration = thumbsUpCelebration,
                     onEditProfile = { showEditProfileDialog = true },
                     onStreakBoost = {
                         viewModel.boostStreak()
                         thumbsUpCelebration = true
-                        Toast.makeText(context, "¡Racha reforzada! +25 XP", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "¡Racha de tareas reforzada! +25 XP", Toast.LENGTH_SHORT).show()
                     }
+                )
+            }
+
+            item {
+                // Tarjeta de Resumen Personal e Identidad para Mostrar
+                ProfileShowcaseSection(
+                    profileName = profileName,
+                    bio = userBio,
+                    topExpenseCategory = topExpenseCategory,
+                    financialProfile = financialProfile,
+                    tasksOnTimePercent = stats?.tasksOnTimePercent ?: 86,
+                    scheduleItems = scheduleItems,
+                    taskStreak = currentStreak,
+                    onOpenShowcaseCard = { showShowcaseDialog = true }
                 )
             }
 
@@ -191,6 +246,62 @@ fun ProfileScreen(
                         Toast.makeText(context, modeName, Toast.LENGTH_SHORT).show()
                     }
                 )
+            }
+
+            item {
+                // Tutoriales de las Secciones
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("tutorial_reset_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.RestartAlt,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Tutoriales y Guías",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = "Si deseas volver a ver las tarjetas de tutorial explicativas en Tareas, Horario, Reuniones, Mercado, Finanzas y Perfil, puedes reactivarlas aquí.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = {
+                                viewModel.resetTutorials()
+                                Toast.makeText(context, "¡Tutoriales reactivados para todas las secciones!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("reset_all_tutorials_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.RestartAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Reactivar todos los tutoriales")
+                        }
+                    }
+                }
             }
 
             item {
@@ -234,12 +345,31 @@ fun ProfileScreen(
                 initialName = profileName,
                 initialAvatarUrl = avatarUrl,
                 initialStatusTag = statusTag,
+                initialBio = userBio,
+                initialCustomAvatarUri = customAvatarUri,
                 onDismiss = { showEditProfileDialog = false },
-                onConfirm = { newName, newAvatarUrl, newStatusTag ->
-                    viewModel.updateProfile(newName, newAvatarUrl, newStatusTag)
+                onConfirm = { newName, newAvatarUrl, newStatusTag, newBio, newCustomAvatarUri ->
+                    viewModel.updateFullProfile(newName, newAvatarUrl, newStatusTag, newBio, newCustomAvatarUri)
                     showEditProfileDialog = false
                     Toast.makeText(context, "¡Perfil actualizado con éxito!", Toast.LENGTH_SHORT).show()
                 }
+            )
+        }
+
+        if (showShowcaseDialog) {
+            ShowcaseProfileModalDialog(
+                profileName = profileName,
+                avatarUrl = customAvatarUri?.ifBlank { null } ?: avatarUrl.ifBlank { KinetixDatabase.AVATAR_URL },
+                statusTag = statusTag,
+                bio = userBio,
+                levelNumber = levelNumber,
+                levelTitle = levelTitle,
+                topExpenseCategory = topExpenseCategory,
+                financialProfile = financialProfile,
+                tasksOnTimePercent = stats?.tasksOnTimePercent ?: 86,
+                scheduleItems = scheduleItems,
+                taskStreak = currentStreak,
+                onDismiss = { showShowcaseDialog = false }
             )
         }
     }
@@ -250,11 +380,17 @@ private fun ProfileHeroCard(
     profileName: String,
     avatarUrl: String,
     statusTag: String,
+    bio: String,
+    customAvatarUri: String?,
+    levelNumber: Int,
+    levelTitle: String,
     currentStreak: Int,
     thumbsUpCelebration: Boolean,
     onEditProfile: () -> Unit,
     onStreakBoost: () -> Unit
 ) {
+    val displayAvatar = customAvatarUri?.ifBlank { null } ?: avatarUrl.ifBlank { KinetixDatabase.AVATAR_URL }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -292,7 +428,7 @@ private fun ProfileHeroCard(
                             .padding(3.dp)
                     ) {
                         AsyncImage(
-                            model = avatarUrl.ifBlank { KinetixDatabase.AVATAR_URL },
+                            model = displayAvatar,
                             contentDescription = "Avatar de $profileName",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -301,7 +437,7 @@ private fun ProfileHeroCard(
                         )
                     }
 
-                    // Level 7 Pill Badge
+                    // Level Pill Badge
                     Surface(
                         shape = CircleShape,
                         color = KinetixPrimary,
@@ -320,7 +456,7 @@ private fun ProfileHeroCard(
                                 modifier = Modifier.size(12.dp)
                             )
                             Text(
-                                text = "Nv. 7",
+                                text = "Nv. $levelNumber",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = KinetixOnPrimary,
@@ -351,7 +487,7 @@ private fun ProfileHeroCard(
                                 modifier = Modifier.size(14.dp)
                             )
                             Text(
-                                text = "Nivel 7: Maestro de la Rutina",
+                                text = levelTitle,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = KinetixPrimary
@@ -405,10 +541,21 @@ private fun ProfileHeroCard(
                             color = KinetixSecondary
                         )
                     }
+
+                    if (bio.isNotBlank()) {
+                        Text(
+                            text = "“$bio”",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontStyle = FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
-            // Streak Prominent Card
+            // Streak Prominent Card: Racha de tareas consecutivas
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -434,7 +581,7 @@ private fun ProfileHeroCard(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.LocalFireDepartment,
+                                imageVector = Icons.Default.TaskAlt,
                                 contentDescription = null,
                                 tint = KinetixOnTertiaryContainer,
                                 modifier = Modifier.size(24.dp)
@@ -443,13 +590,13 @@ private fun ProfileHeroCard(
 
                         Column {
                             Text(
-                                text = "¡$currentStreak Días Consecutivos!",
+                                text = "¡$currentStreak Tareas Consecutivas!",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "¡Racha récord! Mantén el ritmo hoy.",
+                                text = "Racha de tareas realizadas sin pausa",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1315,18 +1462,24 @@ private fun EditProfileDialog(
     initialName: String,
     initialAvatarUrl: String,
     initialStatusTag: String,
+    initialBio: String,
+    initialCustomAvatarUri: String?,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, avatarUrl: String, statusTag: String) -> Unit
+    onConfirm: (name: String, avatarUrl: String, statusTag: String, bio: String, customAvatarUri: String?) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
     var avatarUrl by remember { mutableStateOf(initialAvatarUrl) }
     var statusTag by remember { mutableStateOf(initialStatusTag) }
+    var bio by remember { mutableStateOf(initialBio) }
+    var customAvatarUri by remember { mutableStateOf(initialCustomAvatarUri) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
-            avatarUrl = uri.toString()
+            val uriStr = uri.toString()
+            customAvatarUri = uriStr
+            avatarUrl = uriStr
         }
     }
 
@@ -1337,6 +1490,8 @@ private fun EditProfileDialog(
         "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=300&auto=format&fit=crop&q=80",
         "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=300&auto=format&fit=crop&q=80"
     )
+
+    val currentDisplayAvatar = customAvatarUri?.ifBlank { null } ?: avatarUrl.ifBlank { KinetixDatabase.AVATAR_URL }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1366,7 +1521,7 @@ private fun EditProfileDialog(
                             .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                     ) {
                         AsyncImage(
-                            model = avatarUrl.ifBlank { KinetixDatabase.AVATAR_URL },
+                            model = currentDisplayAvatar,
                             contentDescription = "Avatar actual",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
@@ -1396,7 +1551,7 @@ private fun EditProfileDialog(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Elegir foto", fontSize = 12.sp)
+                            Text(text = "Elegir foto propia", fontSize = 12.sp)
                         }
                     }
                 }
@@ -1414,7 +1569,7 @@ private fun EditProfileDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     presetAvatars.forEach { preset ->
-                        val isSelected = avatarUrl == preset
+                        val isSelected = (customAvatarUri == null && avatarUrl == preset)
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
@@ -1424,7 +1579,10 @@ private fun EditProfileDialog(
                                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                                     shape = CircleShape
                                 )
-                                .clickable { avatarUrl = preset }
+                                .clickable {
+                                    avatarUrl = preset
+                                    customAvatarUri = null
+                                }
                         ) {
                             AsyncImage(
                                 model = preset,
@@ -1452,13 +1610,24 @@ private fun EditProfileDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                OutlinedTextField(
+                    value = bio,
+                    onValueChange = { bio = it },
+                    label = { Text("Descripción sobre mí") },
+                    placeholder = { Text("Ej. Estudiante y desarrollador enfocado en alcanzar mis metas.") },
+                    maxLines = 3,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit_profile_bio_input")
+                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onConfirm(name.trim(), avatarUrl.trim(), statusTag.trim())
+                        onConfirm(name.trim(), avatarUrl.trim(), statusTag.trim(), bio.trim(), customAvatarUri)
                     }
                 }
             ) {
@@ -1471,5 +1640,469 @@ private fun EditProfileDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ProfileShowcaseSection(
+    profileName: String,
+    bio: String,
+    topExpenseCategory: Pair<String, Double>?,
+    financialProfile: com.example.data.local.entity.FinancialProfileEntity?,
+    tasksOnTimePercent: Int,
+    scheduleItems: List<com.example.data.local.entity.ScheduleItemEntity>,
+    taskStreak: Int,
+    onOpenShowcaseCard: () -> Unit
+) {
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("es", "CO")).apply { maximumFractionDigits = 0 } }
+    val studyBlocksCount = scheduleItems.count { it.type.equals("Estudio", ignoreCase = true) }
+    val workBlocksCount = scheduleItems.count { it.type.equals("Trabajo", ignoreCase = true) }
+    val savingsRate = if (financialProfile != null && financialProfile.monthlyIncome > 0) {
+        val fixed = financialProfile.rentHousing + financialProfile.otherFixedExpenses
+        (((financialProfile.monthlyIncome - fixed) / financialProfile.monthlyIncome) * 100).toInt().coerceIn(15, 60)
+    } else {
+        25
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("profile_showcase_section"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Column {
+                Text(
+                    text = "Resumen de Identidad & Hábitos",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Tus hábitos financieros, productividad y rutina para mostrar",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // 4 Bento Summary Grid Cards
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Card 1: Mayor Gasto
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PieChart,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Mayor Gasto",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = topExpenseCategory?.first ?: "Bajo Control",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (topExpenseCategory != null) currencyFormat.format(topExpenseCategory.second) else "Sin excesos",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    // Card 2: Hábito Ahorrador
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Savings,
+                                    contentDescription = null,
+                                    tint = KinetixSecondary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Ahorrador en",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "$savingsRate% Ahorro",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Compras y metas activas",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Card 3: Eficiencia de Tareas
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Speed,
+                                    contentDescription = null,
+                                    tint = KinetixPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Tareas Más Rápidas",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "$tasksOnTimePercent% a tiempo",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Dificultad Media & Alta",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    // Card 4: Mi Horario
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Schedule,
+                                    contentDescription = null,
+                                    tint = KinetixTertiary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Mi Horario",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "$studyBlocksCount Est • $workBlocksCount Trab",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Rutina semanal balanceada",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Button to open full showcase presentation card
+            Button(
+                onClick = onOpenShowcaseCard,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("btn_open_showcase_profile"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Mostrar Tarjeta de Presentación",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShowcaseProfileModalDialog(
+    profileName: String,
+    avatarUrl: String,
+    statusTag: String,
+    bio: String,
+    levelNumber: Int,
+    levelTitle: String,
+    topExpenseCategory: Pair<String, Double>?,
+    financialProfile: com.example.data.local.entity.FinancialProfileEntity?,
+    tasksOnTimePercent: Int,
+    scheduleItems: List<com.example.data.local.entity.ScheduleItemEntity>,
+    taskStreak: Int,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale("es", "CO")).apply { maximumFractionDigits = 0 } }
+    val studyCount = scheduleItems.count { it.type.equals("Estudio", ignoreCase = true) }
+    val workCount = scheduleItems.count { it.type.equals("Trabajo", ignoreCase = true) }
+    val savingsRate = if (financialProfile != null && financialProfile.monthlyIncome > 0) {
+        val fixed = financialProfile.rentHousing + financialProfile.otherFixedExpenses
+        (((financialProfile.monthlyIncome - fixed) / financialProfile.monthlyIncome) * 100).toInt().coerceIn(15, 60)
+    } else {
+        25
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = null,
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header badge
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = "TARJETA DE PRESENTACIÓN",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        letterSpacing = 1.sp
+                    )
+                }
+
+                // Avatar with ring
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        .padding(3.dp)
+                ) {
+                    AsyncImage(
+                        model = avatarUrl.ifBlank { KinetixDatabase.AVATAR_URL },
+                        contentDescription = "Avatar",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                    )
+                }
+
+                // Name & Level
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = profileName,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Nv. $levelNumber • $levelTitle",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = statusTag,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Bio
+                if (bio.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "“$bio”",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontStyle = FontStyle.Italic,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+
+                // 4 Pillars Breakdown
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ShowcaseMetricRow(
+                            icon = Icons.Default.PieChart,
+                            label = "Mayor Gasto",
+                            value = if (topExpenseCategory != null) "${topExpenseCategory.first} (${currencyFormat.format(topExpenseCategory.second)})" else "Gastos equilibrados"
+                        )
+                        ShowcaseMetricRow(
+                            icon = Icons.Default.Savings,
+                            label = "Ahorrador En",
+                            value = "$savingsRate% ahorro mensual proyectado"
+                        )
+                        ShowcaseMetricRow(
+                            icon = Icons.Default.Speed,
+                            label = "Destreza Tareas",
+                            value = "$tasksOnTimePercent% completadas a tiempo"
+                        )
+                        ShowcaseMetricRow(
+                            icon = Icons.Default.Schedule,
+                            label = "Mi Horario",
+                            value = "$studyCount materias estudio, $workCount turnos trabajo"
+                        )
+                        ShowcaseMetricRow(
+                            icon = Icons.Default.TaskAlt,
+                            label = "Racha de Tareas",
+                            value = "$taskStreak consecutivas completadas con éxito"
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val shareText = "🎯 Tarjeta de Presentación - $profileName (Nv. $levelNumber)\n$bio\n\n📊 Mi Resumen:\n• Mayor Gasto: ${topExpenseCategory?.first ?: "Equilibrado"}\n• Ahorro: $savingsRate% mensual\n• Tareas a tiempo: $tasksOnTimePercent%\n• Horario: $studyCount estudio, $workCount trabajo\n• Racha: $taskStreak tareas consecutivas"
+                    val sendIntent = android.content.Intent().apply {
+                        action = android.content.Intent.ACTION_SEND
+                        putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                        type = "text/plain"
+                    }
+                    context.startActivity(android.content.Intent.createChooser(sendIntent, "Compartir mi Tarjeta de Presentación"))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Compartir / Mostrar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("Cerrar")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ShowcaseMetricRow(
+    icon: ImageVector,
+    label: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
 }
 

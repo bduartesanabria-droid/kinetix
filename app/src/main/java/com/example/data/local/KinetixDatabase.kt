@@ -5,16 +5,22 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.data.local.dao.CategoryDao
+import com.example.data.local.dao.ExpenseDao
 import com.example.data.local.dao.FinancialDao
 import com.example.data.local.dao.FinancialGoalDao
 import com.example.data.local.dao.GamificationDao
+import com.example.data.local.dao.MeetingDao
 import com.example.data.local.dao.ScheduleDao
 import com.example.data.local.dao.ShoppingItemDao
 import com.example.data.local.dao.TaskDao
 import com.example.data.local.dao.UserDao
+import com.example.data.local.entity.AppCategoryEntity
+import com.example.data.local.entity.ExpenseTransactionEntity
 import com.example.data.local.entity.FinancialGoalEntity
 import com.example.data.local.entity.FinancialProfileEntity
 import com.example.data.local.entity.GamificationStatsEntity
+import com.example.data.local.entity.MeetingEntity
 import com.example.data.local.entity.ScheduleItemEntity
 import com.example.data.local.entity.ShoppingItemEntity
 import com.example.data.local.entity.TaskEntity
@@ -31,9 +37,12 @@ import kotlinx.coroutines.launch
         GamificationStatsEntity::class,
         FinancialProfileEntity::class,
         FinancialGoalEntity::class,
-        ScheduleItemEntity::class
+        ScheduleItemEntity::class,
+        ExpenseTransactionEntity::class,
+        AppCategoryEntity::class,
+        MeetingEntity::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class KinetixDatabase : RoomDatabase() {
@@ -45,6 +54,9 @@ abstract class KinetixDatabase : RoomDatabase() {
     abstract fun financialDao(): FinancialDao
     abstract fun financialGoalDao(): FinancialGoalDao
     abstract fun scheduleDao(): ScheduleDao
+    abstract fun expenseDao(): ExpenseDao
+    abstract fun categoryDao(): CategoryDao
+    abstract fun meetingDao(): MeetingDao
 
     companion object {
         @Volatile
@@ -158,7 +170,32 @@ abstract class KinetixDatabase : RoomDatabase() {
                 )
             )
 
-            // 5. Tasks and Shopping items start completely clean (empty) as requested!
+            // 5. Default Categories for Tareas, Horario, Mercado y Finanzas
+            val defaultCategories = listOf(
+                // Tareas
+                AppCategoryEntity(id = "cat-task-1", type = "TASK", name = "Trabajo", isDefault = true),
+                AppCategoryEntity(id = "cat-task-2", type = "TASK", name = "Estudio", isDefault = true),
+                AppCategoryEntity(id = "cat-task-3", type = "TASK", name = "Vida Cotidiana", isDefault = true),
+                // Horario
+                AppCategoryEntity(id = "cat-sched-1", type = "SCHEDULE", name = "Estudio", isDefault = true),
+                AppCategoryEntity(id = "cat-sched-2", type = "SCHEDULE", name = "Trabajo", isDefault = true),
+                // Mercado
+                AppCategoryEntity(id = "cat-shop-1", type = "SHOPPING", name = "Supermercado", isDefault = true),
+                AppCategoryEntity(id = "cat-shop-2", type = "SHOPPING", name = "Mercado Libre", isDefault = true),
+                AppCategoryEntity(id = "cat-shop-3", type = "SHOPPING", name = "Temu", isDefault = true),
+                AppCategoryEntity(id = "cat-shop-4", type = "SHOPPING", name = "Farmacia & Hogar", isDefault = true),
+                AppCategoryEntity(id = "cat-shop-5", type = "SHOPPING", name = "Tecnología", isDefault = true),
+                // Finanzas / Gastos
+                AppCategoryEntity(id = "cat-exp-1", type = "EXPENSE", name = "Comida", isDefault = true),
+                AppCategoryEntity(id = "cat-exp-2", type = "EXPENSE", name = "Juegos", isDefault = true),
+                AppCategoryEntity(id = "cat-exp-3", type = "EXPENSE", name = "Salidas", isDefault = true),
+                AppCategoryEntity(id = "cat-exp-4", type = "EXPENSE", name = "Transporte", isDefault = true),
+                AppCategoryEntity(id = "cat-exp-5", type = "EXPENSE", name = "Tecnología", isDefault = true),
+                AppCategoryEntity(id = "cat-exp-6", type = "EXPENSE", name = "Ropa", isDefault = true),
+                AppCategoryEntity(id = "cat-exp-7", type = "EXPENSE", name = "Hogar", isDefault = true),
+                AppCategoryEntity(id = "cat-exp-8", type = "EXPENSE", name = "Otros", isDefault = true)
+            )
+            db.categoryDao().insertCategories(defaultCategories)
         }
     }
 }

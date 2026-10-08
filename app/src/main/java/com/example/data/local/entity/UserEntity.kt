@@ -11,5 +11,7 @@ data class UserEntity(
     @ColumnInfo(name = "avatar_url") val avatarUrl: String,
     @ColumnInfo(name = "level_title") val levelTitle: String,
     @ColumnInfo(name = "level_number") val levelNumber: Int,
-    @ColumnInfo(name = "status_tag") val statusTag: String
+    @ColumnInfo(name = "status_tag") val statusTag: String,
+    @ColumnInfo(name = "bio") val bio: String = "Organizando mis metas, estudio y finanzas día a día.",
+    @ColumnInfo(name = "custom_avatar_uri") val customAvatarUri: String? = null
 )

@@ -1,6 +1,11 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -21,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,15 +35,19 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Celebration
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Cottage
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Fastfood
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.FlightTakeoff
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -46,10 +56,14 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Verified
+import com.example.data.local.entity.ExpenseTransactionEntity
+import com.example.ui.components.CategoryChipRow
+import com.example.ui.components.SectionTutorialCard
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -117,9 +131,46 @@ fun FinanceScreen(
     val otherFixedInput by viewModel.otherFixedInput.collectAsState()
     val isRecalculating by viewModel.isRecalculating.collectAsState()
     val financialGoals by viewModel.financialGoals.collectAsState()
+    val allExpenses by viewModel.allExpenses.collectAsState()
+    val expensesByCategory by viewModel.expensesByCategory.collectAsState()
+    val totalExpensesAmount by viewModel.totalExpensesAmount.collectAsState()
+    val topExpenseCategory by viewModel.topExpenseCategory.collectAsState()
+    val expenseCategories by viewModel.expenseCategories.collectAsState()
+    val monthlyIncomeAmount by viewModel.monthlyIncomeAmount.collectAsState()
+    val netAvailableBalance by viewModel.netAvailableBalance.collectAsState()
+    val dismissedTutorials by viewModel.dismissedTutorials.collectAsState()
+    val showTutorial = dismissedTutorials["FINANZAS"] != true
 
+    val context = LocalContext.current
+    var selectedExpenseCategoryFilter by remember { mutableStateOf("Todas") }
     var showAddGoalDialog by remember { mutableStateOf(false) }
     var goalToContribute by remember { mutableStateOf<FinancialGoalEntity?>(null) }
+
+    var showAddExpenseDialog by remember { mutableStateOf(false) }
+    var prefilledConcept by remember { mutableStateOf("") }
+    var prefilledAmount by remember { mutableStateOf("") }
+    var prefilledCategory by remember { mutableStateOf("Comida") }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenTexts = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val text = spokenTexts?.firstOrNull().orEmpty()
+            if (text.isNotBlank()) {
+                val (amount, concept, category) = viewModel.parseVoiceExpense(text)
+                if (amount > 0) {
+                    viewModel.addExpense(amount, concept, category, text)
+                    Toast.makeText(context, "Gasto de voz añadido: $concept ($${amount.toLong()}) en $category", Toast.LENGTH_LONG).show()
+                } else {
+                    prefilledConcept = concept
+                    prefilledCategory = category
+                    showAddExpenseDialog = true
+                    Toast.makeText(context, "Indica el monto para: \"$text\"", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
@@ -129,14 +180,89 @@ fun FinanceScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                SectionTutorialCard(
+                    isVisible = showTutorial,
+                    title = "Control Financiero & Balance",
+                    subtitle = "Ingresos, gastos, ahorro y dictado de gastos por voz",
+                    tips = listOf(
+                        "Visualiza tu balance exacto: cuánto ganas, cuánto ahorras y cuánto gastas al mes.",
+                        "Dicta tus gastos por voz (ej. 'Me gasté 15 mil en comida') con el micrófono 🎙️.",
+                        "Personaliza tus categorías de gastos (Comida, Juegos, Salidas, Transporte, Tecnología o agrega las tuyas con '+ Categoría').",
+                        "Define metas de ahorro a corto, mediano y largo plazo."
+                    ),
+                    onDismiss = { viewModel.dismissTutorial("FINANZAS") }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(4.dp))
                 // Encabezado Resumen Mensual
                 FinanceMonthlyHeader()
             }
 
             item {
+                // Apartado de Balance Exacto: Estoy Ahorrando, Ganando, Gastando y Balance Neto
+                ExactFinancialBalanceCard(
+                    income = monthlyIncomeAmount,
+                    expenses = totalExpensesAmount,
+                    savings = projection.projectedSavings,
+                    balance = netAvailableBalance
+                )
+            }
+
+            item {
+                // Categorías de Gastos Dinámicas
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Categorías de Gastos",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    CategoryChipRow(
+                        categories = expenseCategories,
+                        selectedCategory = selectedExpenseCategoryFilter,
+                        onSelectCategory = { selectedExpenseCategoryFilter = it },
+                        onAddCategory = { viewModel.addCategory("EXPENSE", it) },
+                        onDeleteCategory = { viewModel.deleteCategory("EXPENSE", it) },
+                        defaultCategories = setOf("Comida", "Juegos", "Salidas", "Transporte", "Tecnología")
+                    )
+                }
+            }
+
+            item {
                 // Tarjeta Destacada: Proyección Estimada de Margen de Ahorro
                 SavingsMarginProjectionCard(projection = projection)
+            }
+
+            item {
+                // Registro de Gastos por Voz & Balance por Categorías ("En qué estoy gastando más")
+                VoiceExpensesSection(
+                    allExpenses = allExpenses,
+                    expensesByCategory = expensesByCategory,
+                    totalExpensesAmount = totalExpensesAmount,
+                    topExpenseCategory = topExpenseCategory,
+                    onStartVoiceRecording = {
+                        try {
+                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
+                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Habla tu gasto: ej. 'Me gasté hoy 15000 pesos en una hamburguesa'")
+                            }
+                            speechLauncher.launch(intent)
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "Entrada manual de gasto", Toast.LENGTH_SHORT).show()
+                            showAddExpenseDialog = true
+                        }
+                    },
+                    onOpenManualAdd = {
+                        prefilledConcept = ""
+                        prefilledAmount = ""
+                        prefilledCategory = "Comida"
+                        showAddExpenseDialog = true
+                    },
+                    onDeleteExpense = { viewModel.deleteExpense(it) }
+                )
             }
 
             item {
@@ -198,6 +324,21 @@ fun FinanceScreen(
                 onConfirm = { amount ->
                     viewModel.contributeToGoal(goal.id, amount)
                     goalToContribute = null
+                }
+            )
+        }
+
+        if (showAddExpenseDialog) {
+            AddExpenseDialog(
+                initialConcept = prefilledConcept,
+                initialAmount = prefilledAmount,
+                initialCategory = prefilledCategory,
+                availableCategories = expenseCategories,
+                onDismiss = { showAddExpenseDialog = false },
+                onConfirm = { concept, amount, category ->
+                    viewModel.addExpense(amount, concept, category)
+                    showAddExpenseDialog = false
+                    Toast.makeText(context, "Gasto registrado con éxito", Toast.LENGTH_SHORT).show()
                 }
             )
         }
@@ -1531,3 +1672,576 @@ private fun FinanceCrossNavigationCard(
         }
     }
 }
+
+@Composable
+private fun VoiceExpensesSection(
+    allExpenses: List<ExpenseTransactionEntity>,
+    expensesByCategory: Map<String, Double>,
+    totalExpensesAmount: Double,
+    topExpenseCategory: Pair<String, Double>?,
+    onStartVoiceRecording: () -> Unit,
+    onOpenManualAdd: () -> Unit,
+    onDeleteExpense: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("voice_expenses_section_card"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Registro por Voz & Gastos",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Traduce tu voz a texto y suma en tu balance",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Audio Record Call to Action Card
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Graba diciendo: \"Me gasté hoy 15.000 pesos en una hamburguesa\" o \"Compré un juego por 80.000\"",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = onStartVoiceRecording,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("btn_record_voice_expense"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Grabar Audio", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = onOpenManualAdd,
+                            modifier = Modifier.testTag("btn_manual_add_expense"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Manual", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+
+            // Balance Summary: "En qué estoy gastando más"
+            val numberFormat = NumberFormat.getCurrencyInstance(Locale("es", "CO")).apply {
+                maximumFractionDigits = 0
+            }
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Balance: ¿En qué gastas más?",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "Total: ${numberFormat.format(totalExpensesAmount)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    if (topExpenseCategory != null && topExpenseCategory.second > 0) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "🔥 Mayor gasto actual: ${topExpenseCategory.first} (${numberFormat.format(topExpenseCategory.second)})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+
+                    // Category breakdown progress bars
+                    val categoriesToDisplay = listOf(
+                        Triple("Comida", Icons.Default.Fastfood, MaterialTheme.colorScheme.primary),
+                        Triple("Juegos", Icons.Default.SportsEsports, MaterialTheme.colorScheme.tertiary),
+                        Triple("Salidas", Icons.Default.Celebration, KinetixSecondary),
+                        Triple("Transporte", Icons.Default.DirectionsCar, MaterialTheme.colorScheme.primary),
+                        Triple("Tecnología", Icons.Default.Devices, KinetixTertiaryFixed),
+                        Triple("Otros", Icons.Default.Payments, MaterialTheme.colorScheme.secondary)
+                    )
+
+                    categoriesToDisplay.forEach { (catName, icon, color) ->
+                        val catTotal = expensesByCategory[catName] ?: 0.0
+                        val percent = if (totalExpensesAmount > 0) (catTotal / totalExpensesAmount).toFloat() else 0f
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(14.dp), tint = color)
+                                    Text(
+                                        text = catName,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                Text(
+                                    text = "${numberFormat.format(catTotal)} (${(percent * 100).toInt()}%)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { percent.coerceIn(0f, 1f) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(CircleShape),
+                                color = color,
+                                trackColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Recent Expenses List
+            if (allExpenses.isNotEmpty()) {
+                Text(
+                    text = "Registro Reciente de Gastos",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                allExpenses.take(6).forEach { exp ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = when (exp.category) {
+                                                "Comida" -> Icons.Default.Fastfood
+                                                "Juegos" -> Icons.Default.SportsEsports
+                                                "Salidas" -> Icons.Default.Celebration
+                                                "Transporte" -> Icons.Default.DirectionsCar
+                                                "Tecnología" -> Icons.Default.Devices
+                                                else -> Icons.Default.Payments
+                                            },
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                                Column {
+                                    Text(
+                                        text = exp.concept,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "${exp.category}${if (exp.rawVoiceNote != null) " • Voz: \"${exp.rawVoiceNote}\"" else ""}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "-${numberFormat.format(exp.amount)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                IconButton(
+                                    onClick = { onDeleteExpense(exp.id) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Eliminar",
+                                        tint = MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddExpenseDialog(
+    initialConcept: String = "",
+    initialAmount: String = "",
+    initialCategory: String = "Comida",
+    availableCategories: List<String> = listOf("Comida", "Juegos", "Salidas", "Transporte", "Tecnología", "Hogar", "Otros"),
+    onDismiss: () -> Unit,
+    onConfirm: (concept: String, amount: Double, category: String) -> Unit
+) {
+    var concept by remember { mutableStateOf(initialConcept) }
+    var amountStr by remember { mutableStateOf(initialAmount) }
+    var category by remember { mutableStateOf(initialCategory) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Registrar Gasto", fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = concept,
+                    onValueChange = { concept = it },
+                    label = { Text("Concepto") },
+                    placeholder = { Text("Ej: Hamburguesa, Salida a cine, Juego") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = amountStr,
+                    onValueChange = { amountStr = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Valor en COP") },
+                    placeholder = { Text("Ej: 15000") },
+                    leadingIcon = { Text("$", fontWeight = FontWeight.Bold) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+
+                Text("Categoría del gasto", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(availableCategories) { cat ->
+                        val isSelected = category == cat
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable { category = cat }
+                        ) {
+                            Text(
+                                text = cat,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val amount = amountStr.toDoubleOrNull() ?: 0.0
+                    if (concept.isNotBlank() && amount > 0) {
+                        onConfirm(concept.trim(), amount, category)
+                    }
+                },
+                enabled = concept.isNotBlank() && (amountStr.toDoubleOrNull() ?: 0.0) > 0
+            ) {
+                Text("Guardar Gasto")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ExactFinancialBalanceCard(
+    income: Double,
+    expenses: Double,
+    savings: Double,
+    balance: Double
+) {
+    val currencyFormat = NumberFormat.getCurrencyInstance(Locale("es", "CO")).apply {
+        maximumFractionDigits = 0
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("exact_financial_balance_card"),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AccountBalanceWallet,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Balance Exacto y Flujo Mensual",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Control en tiempo real de ingresos, ahorros y gastos",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 4 metrics grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Card(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "Estoy ganando",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = currencyFormat.format(income),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                Card(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "Estoy gastando",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = currencyFormat.format(expenses),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Card(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "Estoy ahorrando",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = currencyFormat.format(savings),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                Card(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "Balance exacto",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = currencyFormat.format(balance),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+

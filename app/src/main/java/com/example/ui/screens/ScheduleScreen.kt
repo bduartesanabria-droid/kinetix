@@ -9,6 +9,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +40,8 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Work
+import com.example.ui.components.CategoryChipRow
+import com.example.ui.components.SectionTutorialCard
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -93,8 +97,12 @@ fun ScheduleScreen(
 ) {
     val context = LocalContext.current
     val allScheduleItems by viewModel.scheduleItems.collectAsState()
+    val allTasks by viewModel.allTasks.collectAsState()
     val selectedDay by viewModel.selectedScheduleDay.collectAsState()
     val selectedTypeFilter by viewModel.selectedScheduleTypeFilter.collectAsState()
+    val scheduleCategories by viewModel.scheduleCategories.collectAsState()
+    val dismissedTutorials by viewModel.dismissedTutorials.collectAsState()
+    val showTutorial = dismissedTutorials["HORARIO"] != true
 
     var showAddDialog by remember { mutableStateOf(false) }
     var hasNotificationPerm by remember {
@@ -112,9 +120,8 @@ fun ScheduleScreen(
 
     val dayItems = allScheduleItems.filter { it.dayOfWeek == selectedDay }
     val filteredItems = when (selectedTypeFilter) {
-        "Estudio" -> dayItems.filter { it.type.equals("Estudio", ignoreCase = true) }
-        "Trabajo" -> dayItems.filter { it.type.equals("Trabajo", ignoreCase = true) }
-        else -> dayItems
+        "Todos", "Todas" -> dayItems
+        else -> dayItems.filter { it.type.equals(selectedTypeFilter, ignoreCase = true) }
     }
 
     val studyCount = allScheduleItems.count { it.type.equals("Estudio", ignoreCase = true) }
@@ -128,7 +135,22 @@ fun ScheduleScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                SectionTutorialCard(
+                    isVisible = showTutorial,
+                    title = "Horario Semanal",
+                    subtitle = "Organiza bloques de estudio, trabajo y rutinas diarias",
+                    tips = listOf(
+                        "Visualiza y administra tus horarios de Lunes a Domingo por categorías.",
+                        "Crea o elimina categorías personalizadas de horario usando '+ Categoría'.",
+                        "Activa alarmas sonoras y notificaciones para cada bloque para que la app te avise a tiempo.",
+                        "Consulta el resumen de horas semanales dedicadas a estudio y trabajo."
+                    ),
+                    onDismiss = { viewModel.dismissTutorial("HORARIO") }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(4.dp))
                 // Banner header
                 ScheduleHeaderCard(
                     totalStudy = studyCount,
@@ -206,34 +228,16 @@ fun ScheduleScreen(
                 }
             }
 
-            // Type filter (Todos, Estudio, Trabajo)
+            // Dynamic Categories Filter
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    listOf("Todos", "Estudio", "Trabajo").forEach { type ->
-                        val selected = selectedTypeFilter == type
-                        FilterChip(
-                            selected = selected,
-                            onClick = { viewModel.selectScheduleTypeFilter(type) },
-                            label = { Text(type) },
-                            leadingIcon = {
-                                when (type) {
-                                    "Estudio" -> Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    "Trabajo" -> Icon(Icons.Default.Work, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    else -> Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp))
-                                }
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            ),
-                            modifier = Modifier.testTag("filter_schedule_$type")
-                        )
-                    }
-                }
+                CategoryChipRow(
+                    categories = scheduleCategories,
+                    selectedCategory = selectedTypeFilter,
+                    onSelectCategory = { viewModel.selectScheduleTypeFilter(it) },
+                    onAddCategory = { viewModel.addCategory("SCHEDULE", it) },
+                    onDeleteCategory = { viewModel.deleteCategory("SCHEDULE", it) },
+                    defaultCategories = setOf("Estudio", "Trabajo")
+                )
             }
 
             // Schedule Items List
@@ -311,6 +315,122 @@ fun ScheduleScreen(
                 }
             }
 
+            // Tasks for this Day Section
+            item {
+                val currentDayName = DAYS_OF_WEEK.firstOrNull { it.first == selectedDay }?.second ?: ""
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Tareas para este día ($currentDayName)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onNavigateToTab(KinetixTab.TAREAS) }
+                    ) {
+                        Text(
+                            text = "Gestionar Tareas",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            val pendingTasksForDay = allTasks.filter { !it.isCompleted }
+            if (pendingTasksForDay.isEmpty()) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AccessTime,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "No tienes tareas pendientes pendientes para hoy. ¡Todo al día!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(pendingTasksForDay.take(5), key = { "sched_task_${it.id}" }) { task ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.toggleTaskCompletion(task.id, true) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = task.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "${task.category} • Dif: ${task.difficulty} • ${task.deadlineLabel}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Surface(
+                                shape = CircleShape,
+                                color = when (task.urgency) {
+                                    "ALTA" -> MaterialTheme.colorScheme.errorContainer
+                                    "MEDIA" -> MaterialTheme.colorScheme.tertiaryContainer
+                                    else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                }
+                            ) {
+                                Text(
+                                    text = task.urgency,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 Spacer(modifier = Modifier.height(80.dp))
             }
@@ -333,6 +453,7 @@ fun ScheduleScreen(
     if (showAddDialog) {
         AddScheduleDialog(
             initialDayIndex = selectedDay,
+            availableCategories = scheduleCategories,
             onDismiss = { showAddDialog = false },
             onConfirm = { title, type, dayIndex, dayName, start, end, loc, notes, rem ->
                 viewModel.addScheduleItem(
@@ -647,11 +768,12 @@ private fun ScheduleItemCard(
 @Composable
 private fun AddScheduleDialog(
     initialDayIndex: Int,
+    availableCategories: List<String> = listOf("Estudio", "Trabajo"),
     onDismiss: () -> Unit,
     onConfirm: (title: String, type: String, dayIndex: Int, dayName: String, start: String, end: String, loc: String, notes: String, reminder: Boolean) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("Estudio") }
+    var type by remember { mutableStateOf(availableCategories.firstOrNull() ?: "Estudio") }
     var selectedDay by remember { mutableStateOf(initialDayIndex) }
     var startTime by remember { mutableStateOf("08:00 AM") }
     var endTime by remember { mutableStateOf("10:00 AM") }
@@ -688,10 +810,12 @@ private fun AddScheduleDialog(
                     fontWeight = FontWeight.SemiBold
                 )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("Estudio", "Trabajo").forEach { itemType ->
+                    availableCategories.forEach { itemType ->
                         val isSelected = type == itemType
                         Surface(
                             shape = CircleShape,
@@ -705,7 +829,7 @@ private fun AddScheduleDialog(
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                             )
                         }
                     }

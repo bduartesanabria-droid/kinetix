@@ -72,6 +72,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.ShoppingItemEntity
+import com.example.ui.components.CategoryChipRow
+import com.example.ui.components.SectionTutorialCard
 import com.example.ui.theme.KinetixOnPrimary
 import com.example.ui.theme.KinetixOnSecondary
 import com.example.ui.theme.KinetixOnSecondaryContainer
@@ -91,12 +93,28 @@ fun ShoppingScreen(
     modifier: Modifier = Modifier
 ) {
     val allItems by viewModel.allShoppingItems.collectAsState()
-    var newItemText by remember { mutableStateOf("") }
+    val shoppingCategories by viewModel.shoppingCategories.collectAsState()
+    val dismissedTutorials by viewModel.dismissedTutorials.collectAsState()
+    val showTutorial = dismissedTutorials["MERCADO"] != true
 
-    val pendingItems = allItems.filter { !it.isBought }
-    val boughtItems = allItems.filter { it.isBought }
+    var newItemText by remember { mutableStateOf("") }
+    var selectedStoreCategory by remember { mutableStateOf("Todas") }
+    var newItemStoreCategory by remember { mutableStateOf("Supermercado") }
+
+    val pendingItems = if (selectedStoreCategory == "Todos" || selectedStoreCategory == "Todas") {
+        allItems.filter { !it.isBought }
+    } else {
+        allItems.filter { !it.isBought && it.storeCategory.equals(selectedStoreCategory, ignoreCase = true) }
+    }
+
+    val boughtItems = if (selectedStoreCategory == "Todos" || selectedStoreCategory == "Todas") {
+        allItems.filter { it.isBought }
+    } else {
+        allItems.filter { it.isBought && it.storeCategory.equals(selectedStoreCategory, ignoreCase = true) }
+    }
+
     val totalCount = allItems.size.coerceAtLeast(1)
-    val boughtCount = boughtItems.size
+    val boughtCount = allItems.count { it.isBought }
     val progress = (boughtCount.toFloat() / totalCount.toFloat()).coerceIn(0f, 1f)
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -107,7 +125,21 @@ fun ShoppingScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                SectionTutorialCard(
+                    isVisible = showTutorial,
+                    title = "Lista de Mercado & Compras",
+                    subtitle = "Supermercado, Mercado Libre, Temu, Farmacia y tiendas",
+                    tips = listOf(
+                        "Organiza tus compras por tiendas (Supermercado, Mercado Libre, Temu, Farmacia).",
+                        "Agrega nuevas tiendas o categorías con '+ Categoría' o elimina las existentes.",
+                        "Toca cualquier producto para marcarlo como comprado y ver tu progreso en tiempo real."
+                    ),
+                    onDismiss = { viewModel.dismissTutorial("MERCADO") }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(4.dp))
                 // Status & Context Card
                 ShoppingStatusCard(
                     boughtCount = boughtCount,
@@ -116,14 +148,45 @@ fun ShoppingScreen(
                 )
             }
 
+            // Categorías dinámicas selector (Supermercado, Mercado Libre, Temu, Farmacia...)
             item {
-                // Quick Add Bar
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Apartados de Compras",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    CategoryChipRow(
+                        categories = shoppingCategories,
+                        selectedCategory = selectedStoreCategory,
+                        onSelectCategory = {
+                            selectedStoreCategory = it
+                            if (it != "Todas" && it != "Todos") newItemStoreCategory = it
+                        },
+                        onAddCategory = { viewModel.addCategory("SHOPPING", it) },
+                        onDeleteCategory = { viewModel.deleteCategory("SHOPPING", it) },
+                        defaultCategories = setOf("Supermercado", "Mercado Libre", "Temu", "Farmacia & Hogar")
+                    )
+                }
+            }
+
+            item {
+                // Quick Add Bar with Category Selection
                 QuickAddBar(
                     text = newItemText,
+                    selectedCategory = newItemStoreCategory,
+                    categories = shoppingCategories,
+                    onSelectCategory = { newItemStoreCategory = it },
                     onTextChange = { newItemText = it },
                     onAdd = {
                         if (newItemText.isNotBlank()) {
-                            viewModel.addShoppingItem(newItemText.trim())
+                            viewModel.addShoppingItem(
+                                name = newItemText.trim(),
+                                isPriority = false,
+                                category = newItemStoreCategory,
+                                storeCategory = newItemStoreCategory
+                            )
                             newItemText = ""
                         }
                     }
@@ -383,6 +446,9 @@ private fun ShoppingStatusCard(
 @Composable
 private fun QuickAddBar(
     text: String,
+    selectedCategory: String,
+    categories: List<String>,
+    onSelectCategory: (String) -> Unit,
     onTextChange: (String) -> Unit,
     onAdd: () -> Unit
 ) {
@@ -392,59 +458,89 @@ private fun QuickAddBar(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.AddShoppingCart,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline,
-                modifier = Modifier
-                    .padding(start = 10.dp)
-                    .size(20.dp)
-            )
-
-            OutlinedTextField(
-                value = text,
-                onValueChange = onTextChange,
-                placeholder = {
-                    Text(
-                        text = "Añadir ítem (ej. Leche, Manzanas)...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("new_item_input"),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent
-                ),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { onAdd() })
-            )
-
-            IconButton(
-                onClick = onAdd,
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(KinetixPrimary, RoundedCornerShape(10.dp))
-                    .testTag("add_item_button")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Agregar ítem",
-                    tint = KinetixOnPrimary,
-                    modifier = Modifier.size(22.dp)
+                    imageVector = Icons.Default.AddShoppingCart,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier
+                        .padding(start = 6.dp)
+                        .size(20.dp)
                 )
+
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    placeholder = {
+                        Text(
+                            text = "Añadir a $selectedCategory...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("new_item_input"),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onAdd() })
+                )
+
+                IconButton(
+                    onClick = onAdd,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(KinetixPrimary, RoundedCornerShape(10.dp))
+                        .testTag("add_item_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Agregar ítem",
+                        tint = KinetixOnPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // Quick store category selector for the item being added
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+            ) {
+                items(categories) { cat ->
+                    val isSelected = selectedCategory == cat
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onSelectCategory(cat) }
+                    ) {
+                        Text(
+                            text = cat,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -524,6 +620,19 @@ private fun ShoppingItemRow(
                 textDecoration = if (item.isBought) TextDecoration.LineThrough else null,
                 modifier = Modifier.weight(1f)
             )
+
+            // Category/Apartado Pill
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Text(
+                    text = item.storeCategory,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
 
             // Priority Badge if any
             if (item.isPriority && !item.isBought) {

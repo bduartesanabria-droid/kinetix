@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CalendarToday
+import com.example.ui.components.CategoryChipRow
+import com.example.ui.components.SectionTutorialCard
 import androidx.compose.material.icons.filled.CalendarViewDay
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -50,6 +52,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -121,6 +124,9 @@ fun TasksScreen(
     val isFocusModeActive by viewModel.isFocusModeActive.collectAsState()
     val showAddTaskDialog by viewModel.showAddTaskDialog.collectAsState()
     val gamificationStats by viewModel.gamificationStats.collectAsState()
+    val taskCategories by viewModel.taskCategories.collectAsState()
+    val dismissedTutorials by viewModel.dismissedTutorials.collectAsState()
+    val showTutorial = dismissedTutorials["TAREAS"] != true
 
     val completedCount = allTasks.count { it.isCompleted }
     val totalCount = allTasks.size.coerceAtLeast(1)
@@ -134,6 +140,21 @@ fun TasksScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item {
+                SectionTutorialCard(
+                    isVisible = showTutorial,
+                    title = "Gestión de Tareas",
+                    subtitle = "Trabajo, Estudio y Vida Cotidiana con categorías personalizables",
+                    tips = listOf(
+                        "Organiza y filtra tus tareas por Trabajo, Estudio, Vida Cotidiana o agrega nuevas categorías con '+ Categoría'.",
+                        "Marca tareas completadas para ganar XP y mantener tu racha activa.",
+                        "Configura recordatorios y nivel de urgencia para entregas a tiempo.",
+                        "Usa el Modo Enfoque ⚡ para concentrarte en tus prioridades de hoy."
+                    ),
+                    onDismiss = { viewModel.dismissTutorial("TAREAS") }
+                )
+            }
+
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 // Gamification Progress & Momentum Banner
@@ -156,11 +177,14 @@ fun TasksScreen(
             }
 
             item {
-                // Horizontal Filter Chips
-                FilterChipsRow(
-                    selectedFilter = selectedFilter,
-                    totalTasksCount = allTasks.count { !it.isCompleted },
-                    onSelectFilter = { viewModel.selectCategoryFilter(it) }
+                // Horizontal Filter Chips with dynamic category management
+                CategoryChipRow(
+                    categories = taskCategories,
+                    selectedCategory = selectedFilter,
+                    onSelectCategory = { viewModel.selectCategoryFilter(it) },
+                    onAddCategory = { viewModel.addCategory("TASK", it) },
+                    onDeleteCategory = { viewModel.deleteCategory("TASK", it) },
+                    defaultCategories = setOf("Trabajo", "Estudio", "Vida Cotidiana")
                 )
             }
 
@@ -275,21 +299,27 @@ fun TasksScreen(
     if (showAddTaskDialog) {
         val context = LocalContext.current
         AddTaskDialog(
-            onDismiss = { viewModel.setShowAddTaskDialog(false) },
-            onConfirm = { title, category, deadlineMs, difficulty, duration, project, reminder ->
+            availableCategories = taskCategories,
+            onDismiss = {
+                NotificationHelper.stopAlarmSound()
+                viewModel.setShowAddTaskDialog(false)
+            },
+            onConfirm = { title, category, deadlineMs, difficulty, duration, project, reminder, isSpecificDayOnly ->
                 viewModel.addNewTask(
                     title = title,
                     category = category,
                     deadlineEpochMs = deadlineMs,
                     difficulty = difficulty,
                     duration = duration,
-                    project = project
+                    project = project,
+                    isSpecificDayOnly = isSpecificDayOnly
                 )
                 if (reminder) {
                     NotificationHelper.showTaskReminder(
                         context = context,
                         title = title,
-                        message = "Tienes una entrega programada ($difficulty) para $title"
+                        message = "Alarma programada ($difficulty) para $title",
+                        ringAlarm = true
                     )
                 }
             }
@@ -336,14 +366,14 @@ private fun GamificationHeaderCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.LocalFireDepartment,
+                            imageVector = Icons.Default.TaskAlt,
                             contentDescription = null,
                             tint = KinetixTertiary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
                     Text(
-                        text = "Racha Activa: $currentStreak días",
+                        text = "Racha: $currentStreak tareas seguidas",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -1243,15 +1273,18 @@ private fun FloatingActionDock(
 
 @Composable
 private fun AddTaskDialog(
+    availableCategories: List<String> = listOf("Trabajo", "Estudio", "Vida Cotidiana"),
     onDismiss: () -> Unit,
-    onConfirm: (title: String, category: String, deadlineMs: Long, difficulty: String, duration: String, project: String, reminder: Boolean) -> Unit
+    onConfirm: (title: String, category: String, deadlineMs: Long, difficulty: String, duration: String, project: String, reminder: Boolean, isSpecificDayOnly: Boolean) -> Unit
 ) {
     val context = LocalContext.current
     var title by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("Trabajo") }
+    var category by remember { mutableStateOf(availableCategories.firstOrNull() ?: "Trabajo") }
     var difficulty by remember { mutableStateOf("MEDIA") }
     var duration by remember { mutableStateOf("Duración: 1h") }
     var project by remember { mutableStateOf("General") }
+    var isSpecificDayOnly by remember { mutableStateOf(false) }
+    var isAlarmTesting by remember { mutableStateOf(false) }
 
     val now = remember { System.currentTimeMillis() }
     val deadlinePresets = remember {
@@ -1289,7 +1322,10 @@ private fun AddTaskDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            NotificationHelper.stopAlarmSound()
+            onDismiss()
+        },
         title = {
             Text(
                 text = "Crear Nueva Tarea",
@@ -1313,17 +1349,19 @@ private fun AddTaskDialog(
                     singleLine = true
                 )
 
-                // Category
+                // Category selection
                 Text(
                     text = "Categoría",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    listOf("Trabajo", "Estudio", "Vida Cotidiana").forEach { cat ->
+                    availableCategories.forEach { cat ->
                         Surface(
                             shape = CircleShape,
                             color = if (category == cat) KinetixPrimary else MaterialTheme.colorScheme.surfaceContainer,
@@ -1336,7 +1374,41 @@ private fun AddTaskDialog(
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (category == cat) FontWeight.Bold else FontWeight.Normal,
                                 color = if (category == cat) Color.White else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Modalidad de fecha (Fecha límite vs Día específico)
+                Text(
+                    text = "Tipo de programación",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        Pair(false, "Hasta ese día (Límite)"),
+                        Pair(true, "En día específico")
+                    ).forEach { (specific, label) ->
+                        val isSelected = isSpecificDayOnly == specific
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { isSpecificDayOnly = specific }
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                         }
                     }
@@ -1344,7 +1416,7 @@ private fun AddTaskDialog(
 
                 // Deadline selection (determines urgency)
                 Text(
-                    text = "Fecha límite de entrega",
+                    text = if (isSpecificDayOnly) "Día fijado para hacerla" else "Fecha límite de entrega",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -1399,14 +1471,14 @@ private fun AddTaskDialog(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Urgencia calculada: $calculatedUrgency (por plazo restante)",
+                            text = "Urgencia calculada: $calculatedUrgency (por tiempo restante)",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
-                // Difficulty selector (explicitly requested by user: Baja, Media, Alta)
+                // Difficulty selector (Baja, Media, Alta)
                 Text(
                     text = "Dificultad de la tarea",
                     style = MaterialTheme.typography.labelMedium,
@@ -1450,7 +1522,7 @@ private fun AddTaskDialog(
                     singleLine = true
                 )
 
-                // Notification and Alarm permission toggle
+                // Notification and Alarm section
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1458,12 +1530,12 @@ private fun AddTaskDialog(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Recordatorio y Alarma",
+                            text = "Alarma Sonora y Notificación",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = if (hasNotifPerm) "Avisar antes del plazo límite" else "Requiere permiso de notificaciones",
+                            text = if (hasNotifPerm) "Suena con tono de alarma del sistema" else "Requiere permiso del dispositivo",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1482,12 +1554,52 @@ private fun AddTaskDialog(
                         }
                     )
                 }
+
+                // Audio Alarm Tester Button
+                if (reminderEnabled) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isAlarmTesting) KinetixErrorContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (isAlarmTesting) {
+                                    NotificationHelper.stopAlarmSound()
+                                    isAlarmTesting = false
+                                } else {
+                                    NotificationHelper.playAlarmSound(context)
+                                    isAlarmTesting = true
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isAlarmTesting) Icons.Default.Alarm else Icons.Default.NotificationsActive,
+                                contentDescription = null,
+                                tint = if (isAlarmTesting) KinetixError else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = if (isAlarmTesting) "🔊 Sonando alarma... Toca para detener" else "🔔 Probar cómo sonará la alarma",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isAlarmTesting) KinetixError else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onConfirm(title, category, selectedDeadlineMs, difficulty, duration, project, reminderEnabled)
+                    NotificationHelper.stopAlarmSound()
+                    onConfirm(title, category, selectedDeadlineMs, difficulty, duration, project, reminderEnabled, isSpecificDayOnly)
                 },
                 enabled = title.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = KinetixPrimary),
@@ -1497,7 +1609,10 @@ private fun AddTaskDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                NotificationHelper.stopAlarmSound()
+                onDismiss()
+            }) {
                 Text("Cancelar")
             }
         }

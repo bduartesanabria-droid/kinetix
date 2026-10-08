@@ -18,4 +18,7 @@ interface UserDao {
 
     @Query("UPDATE users SET name = :name, avatar_url = :avatarUrl, status_tag = :statusTag WHERE id = :id")
     suspend fun updateProfile(id: String, name: String, avatarUrl: String, statusTag: String)
+
+    @Query("UPDATE users SET name = :name, avatar_url = :avatarUrl, status_tag = :statusTag, bio = :bio, custom_avatar_uri = :customAvatarUri WHERE id = :id")
+    suspend fun updateFullProfile(id: String, name: String, avatarUrl: String, statusTag: String, bio: String, customAvatarUri: String?)
 }

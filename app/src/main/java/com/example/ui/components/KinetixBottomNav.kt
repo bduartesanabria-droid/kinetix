@@ -8,11 +8,13 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.VideoCameraFront
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.ShoppingCart
+import androidx.compose.material.icons.outlined.VideoCameraFront
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -123,7 +125,36 @@ fun KinetixBottomNav(
             modifier = Modifier.testTag("bottom_nav_horario")
         )
 
-        // 3. Mercado
+        // 3. Reuniones
+        val isReuniones = selectedTab == KinetixTab.REUNIONES
+        NavigationBarItem(
+            selected = isReuniones,
+            onClick = { onTabSelected(KinetixTab.REUNIONES) },
+            alwaysShowLabel = true,
+            icon = {
+                Icon(
+                    imageVector = if (isReuniones) Icons.Filled.VideoCameraFront else Icons.Outlined.VideoCameraFront,
+                    contentDescription = "Reuniones"
+                )
+            },
+            label = {
+                Text(
+                    text = "Reuniones",
+                    fontSize = 11.sp,
+                    fontWeight = if (isReuniones) FontWeight.Bold else FontWeight.Normal
+                )
+            },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                selectedTextColor = MaterialTheme.colorScheme.primary,
+                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+            ),
+            modifier = Modifier.testTag("bottom_nav_reuniones")
+        )
+
+        // 4. Mercado
         val isMercado = selectedTab == KinetixTab.MERCADO
         NavigationBarItem(
             selected = isMercado,

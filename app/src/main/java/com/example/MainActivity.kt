@@ -14,6 +14,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.example.ui.components.KinetixBottomNav
 import com.example.ui.screens.FinanceScreen
+import com.example.ui.screens.MeetingsScreen
+import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ScheduleScreen
 import com.example.ui.screens.ShoppingScreen
@@ -33,52 +35,63 @@ class MainActivity : ComponentActivity() {
             val themeMode by viewModel.themeMode.collectAsState()
 
             KinetixTheme(themeMode = themeMode) {
-                val selectedTab by viewModel.selectedTab.collectAsState()
-                val pendingTasksCount by viewModel.pendingTasksCount.collectAsState()
-                val pendingShoppingCount by viewModel.pendingShoppingCount.collectAsState()
-                val user by viewModel.user.collectAsState()
+                val hasCompletedOnboarding by viewModel.hasCompletedOnboarding.collectAsState()
 
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    bottomBar = {
-                        KinetixBottomNav(
-                            selectedTab = selectedTab,
-                            onTabSelected = { viewModel.selectTab(it) },
-                            pendingTasksCount = pendingTasksCount,
-                            pendingShoppingCount = pendingShoppingCount
-                        )
-                    }
-                ) { innerPadding ->
-                    Crossfade(
-                        targetState = selectedTab,
-                        label = "screen_crossfade"
-                    ) { tab ->
-                        when (tab) {
-                            KinetixTab.TAREAS -> TasksScreen(
-                                viewModel = viewModel,
-                                onNavigateToTab = { viewModel.selectTab(it) },
-                                modifier = Modifier.padding(innerPadding)
+                if (!hasCompletedOnboarding) {
+                    OnboardingScreen(viewModel = viewModel)
+                } else {
+                    val selectedTab by viewModel.selectedTab.collectAsState()
+                    val pendingTasksCount by viewModel.pendingTasksCount.collectAsState()
+                    val pendingShoppingCount by viewModel.pendingShoppingCount.collectAsState()
+                    val user by viewModel.user.collectAsState()
+
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        bottomBar = {
+                            KinetixBottomNav(
+                                selectedTab = selectedTab,
+                                onTabSelected = { viewModel.selectTab(it) },
+                                pendingTasksCount = pendingTasksCount,
+                                pendingShoppingCount = pendingShoppingCount
                             )
-                            KinetixTab.HORARIO -> ScheduleScreen(
-                                viewModel = viewModel,
-                                onNavigateToTab = { viewModel.selectTab(it) },
-                                modifier = Modifier.padding(innerPadding)
-                            )
-                            KinetixTab.MERCADO -> ShoppingScreen(
-                                viewModel = viewModel,
-                                onNavigateToTab = { viewModel.selectTab(it) },
-                                modifier = Modifier.padding(innerPadding)
-                            )
-                            KinetixTab.FINANZAS -> FinanceScreen(
-                                viewModel = viewModel,
-                                onNavigateToTab = { viewModel.selectTab(it) },
-                                modifier = Modifier.padding(innerPadding)
-                            )
-                            KinetixTab.PERFIL -> ProfileScreen(
-                                viewModel = viewModel,
-                                onNavigateToTab = { viewModel.selectTab(it) },
-                                modifier = Modifier.padding(innerPadding)
-                            )
+                        }
+                    ) { innerPadding ->
+                        Crossfade(
+                            targetState = selectedTab,
+                            label = "screen_crossfade"
+                        ) { tab ->
+                            when (tab) {
+                                KinetixTab.TAREAS -> TasksScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToTab = { viewModel.selectTab(it) },
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                                KinetixTab.HORARIO -> ScheduleScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToTab = { viewModel.selectTab(it) },
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                                KinetixTab.REUNIONES -> MeetingsScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToTab = { viewModel.selectTab(it) },
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                                KinetixTab.MERCADO -> ShoppingScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToTab = { viewModel.selectTab(it) },
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                                KinetixTab.FINANZAS -> FinanceScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToTab = { viewModel.selectTab(it) },
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                                KinetixTab.PERFIL -> ProfileScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToTab = { viewModel.selectTab(it) },
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                            }
                         }
                     }
                 }

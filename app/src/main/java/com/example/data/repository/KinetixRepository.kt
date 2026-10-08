@@ -1,9 +1,11 @@
 package com.example.data.repository
 
 import com.example.data.local.KinetixDatabase
+import com.example.data.local.entity.AppCategoryEntity
 import com.example.data.local.entity.FinancialGoalEntity
 import com.example.data.local.entity.FinancialProfileEntity
 import com.example.data.local.entity.GamificationStatsEntity
+import com.example.data.local.entity.MeetingEntity
 import com.example.data.local.entity.ScheduleItemEntity
 import com.example.data.local.entity.ShoppingItemEntity
 import com.example.data.local.entity.TaskEntity
@@ -25,6 +27,9 @@ class KinetixRepository(private val database: KinetixDatabase) {
     private val userDao = database.userDao()
     private val scheduleDao = database.scheduleDao()
     private val financialGoalDao = database.financialGoalDao()
+    private val expenseDao = database.expenseDao()
+    private val categoryDao = database.categoryDao()
+    private val meetingDao = database.meetingDao()
 
     val user: Flow<UserEntity?> = userDao.getUser()
     val allTasks: Flow<List<TaskEntity>> = taskDao.getAllTasks()
@@ -34,6 +39,11 @@ class KinetixRepository(private val database: KinetixDatabase) {
     val financialProfile: Flow<FinancialProfileEntity?> = financialDao.getFinancialProfile()
     val scheduleItems: Flow<List<ScheduleItemEntity>> = scheduleDao.getAllScheduleItems()
     val financialGoals: Flow<List<FinancialGoalEntity>> = financialGoalDao.getAllGoals()
+    val allExpenses: Flow<List<com.example.data.local.entity.ExpenseTransactionEntity>> = expenseDao.getAllExpenses()
+    val allCategories: Flow<List<AppCategoryEntity>> = categoryDao.getAllCategories()
+    val allMeetings: Flow<List<MeetingEntity>> = meetingDao.getAllMeetings()
+
+    fun getCategoriesByType(type: String): Flow<List<AppCategoryEntity>> = categoryDao.getCategoriesByType(type)
 
     suspend fun setTaskCompletion(taskId: String, isCompleted: Boolean) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
@@ -52,7 +62,8 @@ class KinetixRepository(private val database: KinetixDatabase) {
         deadlineEpochMs: Long,
         difficulty: String = "MEDIA",
         durationLabel: String = "Duración: 1h",
-        projectTag: String = "General"
+        projectTag: String = "General",
+        isSpecificDayOnly: Boolean = false
     ) = withContext(Dispatchers.IO) {
         val diffMs = deadlineEpochMs - System.currentTimeMillis()
         val hours = diffMs / (1000 * 60 * 60)
@@ -64,7 +75,8 @@ class KinetixRepository(private val database: KinetixDatabase) {
 
         val dateFmt = SimpleDateFormat("d MMM, hh:mm a", Locale("es", "ES"))
         val formattedDate = dateFmt.format(Date(deadlineEpochMs))
-        val deadlineLabel = "$formattedDate • Urgencia $urgency"
+        val prefix = if (isSpecificDayOnly) "Para hacer el" else "Entrega hasta"
+        val deadlineLabel = "$prefix $formattedDate • Urgencia $urgency"
 
         val task = TaskEntity(
             id = UUID.randomUUID().toString(),
@@ -92,18 +104,50 @@ class KinetixRepository(private val database: KinetixDatabase) {
         taskDao.deleteTaskById(taskId)
     }
 
-    suspend fun addShoppingItem(name: String, isPriority: Boolean = false, category: String = "General") = withContext(Dispatchers.IO) {
+    suspend fun addShoppingItem(
+        name: String,
+        isPriority: Boolean = false,
+        category: String = "General",
+        storeCategory: String = "Supermercado"
+    ) = withContext(Dispatchers.IO) {
         val item = ShoppingItemEntity(
             id = UUID.randomUUID().toString(),
             name = name,
             category = category,
-            iconName = "shopping_bag",
+            iconName = when (storeCategory) {
+                "Tecnología" -> "devices"
+                "Mercado Libre" -> "local_shipping"
+                "Temu" -> "card_giftcard"
+                else -> "shopping_bag"
+            },
             isBought = false,
             isPriority = isPriority,
             estimatedPrice = 0.0,
-            boughtAt = null
+            boughtAt = null,
+            storeCategory = storeCategory
         )
         shoppingItemDao.insertItem(item)
+    }
+
+    suspend fun addExpense(
+        amount: Double,
+        concept: String,
+        category: String,
+        rawVoiceNote: String? = null
+    ) = withContext(Dispatchers.IO) {
+        val expense = com.example.data.local.entity.ExpenseTransactionEntity(
+            id = UUID.randomUUID().toString(),
+            amount = amount,
+            concept = concept,
+            category = category,
+            timestamp = System.currentTimeMillis(),
+            rawVoiceNote = rawVoiceNote
+        )
+        expenseDao.insertExpense(expense)
+    }
+
+    suspend fun deleteExpense(id: String) = withContext(Dispatchers.IO) {
+        expenseDao.deleteExpense(id)
     }
 
     suspend fun toggleShoppingItem(itemId: String, isBought: Boolean) = withContext(Dispatchers.IO) {
@@ -205,8 +249,82 @@ class KinetixRepository(private val database: KinetixDatabase) {
         userDao.updateProfile(KinetixDatabase.DEFAULT_USER_ID, name, avatarUrl, statusTag)
     }
 
+    suspend fun updateFullProfile(
+        name: String,
+        avatarUrl: String,
+        statusTag: String,
+        bio: String,
+        customAvatarUri: String?
+    ) = withContext(Dispatchers.IO) {
+        userDao.updateFullProfile(
+            id = KinetixDatabase.DEFAULT_USER_ID,
+            name = name,
+            avatarUrl = avatarUrl,
+            statusTag = statusTag,
+            bio = bio,
+            customAvatarUri = customAvatarUri
+        )
+    }
+
     suspend fun boostStreak() = withContext(Dispatchers.IO) {
         gamificationDao.incrementStreak(KinetixDatabase.DEFAULT_USER_ID)
         gamificationDao.addXp(KinetixDatabase.DEFAULT_USER_ID, 25)
+    }
+
+    suspend fun addCategory(type: String, name: String) = withContext(Dispatchers.IO) {
+        if (name.isBlank()) return@withContext
+        val category = AppCategoryEntity(
+            id = UUID.randomUUID().toString(),
+            type = type,
+            name = name.trim(),
+            isDefault = false
+        )
+        categoryDao.insertCategory(category)
+    }
+
+    suspend fun deleteCategory(id: String) = withContext(Dispatchers.IO) {
+        categoryDao.deleteCategoryById(id)
+    }
+
+    suspend fun deleteCategoryByNameAndType(name: String, type: String) = withContext(Dispatchers.IO) {
+        categoryDao.deleteCategoryByNameAndType(name, type)
+    }
+
+    suspend fun addMeeting(
+        title: String,
+        dateKey: String,
+        dateDisplay: String,
+        timeDisplay: String,
+        startTimeEpoch: Long,
+        isVirtual: Boolean,
+        platformOrLink: String = "",
+        physicalLocation: String = "",
+        notifyOneHourBefore: Boolean = true,
+        description: String = "",
+        rawVoiceNote: String? = null
+    ) = withContext(Dispatchers.IO) {
+        val meeting = MeetingEntity(
+            id = UUID.randomUUID().toString(),
+            title = title.trim(),
+            description = description.trim(),
+            dateKey = dateKey,
+            dateDisplay = dateDisplay,
+            timeDisplay = timeDisplay,
+            startTimeEpoch = startTimeEpoch,
+            isVirtual = isVirtual,
+            platformOrLink = platformOrLink.trim(),
+            physicalLocation = physicalLocation.trim(),
+            notifyOneHourBefore = notifyOneHourBefore,
+            rawVoiceNote = rawVoiceNote
+        )
+        meetingDao.insertMeeting(meeting)
+    }
+
+    suspend fun deleteMeeting(id: String) = withContext(Dispatchers.IO) {
+        meetingDao.deleteMeetingById(id)
+    }
+
+    suspend fun toggleMeetingCompleted(id: String, isCompleted: Boolean) = withContext(Dispatchers.IO) {
+        meetingDao.toggleMeetingCompleted(id, isCompleted)
     }
 }

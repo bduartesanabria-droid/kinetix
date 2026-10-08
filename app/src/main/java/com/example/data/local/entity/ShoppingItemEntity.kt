@@ -13,5 +13,6 @@ data class ShoppingItemEntity(
     @ColumnInfo(name = "is_bought") val isBought: Boolean = false,
     @ColumnInfo(name = "is_priority") val isPriority: Boolean = false,
     @ColumnInfo(name = "estimated_price") val estimatedPrice: Double = 0.0,
-    @ColumnInfo(name = "bought_at") val boughtAt: Long? = null
+    @ColumnInfo(name = "bought_at") val boughtAt: Long? = null,
+    @ColumnInfo(name = "store_category") val storeCategory: String = "Supermercado"
 )
